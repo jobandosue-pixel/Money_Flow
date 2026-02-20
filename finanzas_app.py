@@ -23,7 +23,7 @@ TIPS_FINANCIEROS = [
     "**Regla de las 24 Horas:** Antes de una compra impulsiva, espera un día completo."
 ]
 
-# --- Funciones de Datos (Preservadas) ---
+# --- Funciones de Datos ---
 def cargar_datos():
     if os.path.exists(DB_FILE): return pd.read_csv(DB_FILE)
     return pd.DataFrame(columns=["Fecha", "Tipo", "Categoría", "Monto", "Observaciones"])
@@ -39,7 +39,7 @@ def cargar_categorias():
 def guardar_lista_categorias(lista):
     pd.DataFrame({"Nombre": lista}).to_csv(CAT_FILE, index=False)
 
-# --- Generador de Diseño de Estado de Cuenta (Preservado) ---
+# --- Generador de Diseño de Estado de Cuenta (HTML Adjunto) ---
 def generar_html_diseno(df):
     df_sorted = df.sort_values(by="Fecha", ascending=False)
     total_ing = df[df["Tipo"] == "Ingreso"]["Monto"].sum()
@@ -49,10 +49,10 @@ def generar_html_diseno(df):
     html = f"""
     <div style="font-family: Calibri, sans-serif; border: 1px solid #004d40; max-width: 600px; margin: auto;">
         <div style="background-color: #004d40; color: white; padding: 10px; text-align: center;">
-            <h2>ESTADO DE CUENTA PROFESIONAL</h2>
+            <h2 style="margin:0;">ESTADO DE CUENTA PROFESIONAL</h2>
         </div>
         <div style="padding: 15px;">
-            <p><b>Balance Neto:</b> ${saldo:,.2f}</p>
+            <p style="font-size: 16px;"><b>Balance Neto:</b> ${saldo:,.2f}</p>
             <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
                 <thead>
                     <tr style="background-color: #dce6f1;">
@@ -128,18 +128,57 @@ with st.sidebar:
         yag.send(to=DESTINATARIO, subject="Estado de Cuenta (Vista Directa)", contents=generar_html_diseno(df))
         st.success("Enviado al cuerpo")
 
-    # --- BOTÓN 2: TODO COMO ADJUNTO ---
+    # --- BOTÓN 2: TODO COMO ADJUNTO (CON CUERPO PROFESIONAL) ---
     if st.button("📎 Enviar Todo como Adjunto", use_container_width=True):
         # Generar archivo temporal del reporte
-        with open("Estado_Cuenta.html", "w", encoding="utf-8") as f: f.write(generar_html_diseno(df))
+        with open("Estado_Cuenta.html", "w", encoding="utf-8") as f: 
+            f.write(generar_html_diseno(df))
         
         frase = random.choice(FRASES_DIA)
         tip = random.choice(TIPS_FINANCIEROS)
-        cuerpo_bonito = f"<h3>¡Hola!</h3><p>{frase}</p><p><b>Tip:</b> {tip}</p><p>Te adjunto tu data y el reporte visual.</p>"
+        fecha_actual = datetime.now().strftime("%d/%m/%Y")
+        
+        # --- DISEÑO DEL CUERPO DEL CORREO ---
+        cuerpo_bonito = f"""
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; border: 1px solid #e0e0e0; border-radius: 10px; overflow: hidden; color: #333;">
+            <div style="background-color: #004d40; color: white; padding: 25px; text-align: center;">
+                <h1 style="margin: 0; font-size: 22px; text-transform: uppercase; letter-spacing: 2px;">Reporte de Finanzas</h1>
+                <p style="margin: 5px 0 0 0; opacity: 0.9;">Corte al: {fecha_actual}</p>
+            </div>
+            
+            <div style="padding: 30px; line-height: 1.6;">
+                <h2 style="color: #004d40; margin-top: 0;">¡Hola!</h2>
+                
+                <div style="border-left: 4px solid #004d40; padding-left: 20px; margin: 25px 0; font-style: italic; color: #555;">
+                    {frase}
+                </div>
+                
+                <div style="background-color: #f4f7f6; border-radius: 8px; padding: 20px; margin: 25px 0;">
+                    <strong style="color: #004d40; display: block; margin-bottom: 5px;">💡 Tip Financiero:</strong>
+                    <span style="font-size: 15px;">{tip}</span>
+                </div>
+                
+                <p style="font-size: 15px;">
+                    Adjunto a este mensaje encontrarás el <b>Estado de Cuenta</b> en formato visual (HTML) y la <b>Base de Datos</b> completa (CSV) para tu respaldo.
+                </p>
+                
+                <p style="margin-top: 30px; font-weight: bold; color: #004d40;">Saludos,<br>Tu Gestor Financiero AI</p>
+            </div>
+            
+            <div style="background-color: #f9f9f9; color: #999; padding: 15px; text-align: center; font-size: 11px; border-top: 1px solid #eee;">
+                Este correo fue generado automáticamente desde tu aplicación de control de gastos.
+            </div>
+        </div>
+        """
         
         yag = yagmail.SMTP(USUARIO_MAIL, PASSWORD_MAIL)
-        yag.send(to=DESTINATARIO, subject="Data + Reporte Adjuntos", contents=cuerpo_bonito, attachments=[DB_FILE, "Estado_Cuenta.html"])
-        st.success("Archivos adjuntados con éxito")
+        yag.send(
+            to=DESTINATARIO, 
+            subject=f"Resumen Financiero - {fecha_actual}", 
+            contents=cuerpo_bonito, 
+            attachments=[DB_FILE, "Estado_Cuenta.html"]
+        )
+        st.success("Correo enviado profesionalmente")
 
     with st.expander("Categorías"):
         nc = st.text_input("Nueva:")
