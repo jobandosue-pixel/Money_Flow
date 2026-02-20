@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import yagmail
 import os
-import random
 from datetime import datetime
 
 # ================= CONFIGURACIÓN =================
@@ -13,135 +12,159 @@ DESTINATARIO = "jobando@envasescomeca.com"
 DB_FILE = "money_data.csv"
 CAT_FILE = "categorias_personalizadas.csv"
 
-# --- Contenido Proactivo ---
-FRASES_DIA = [
-    "“Cuida de los pequeños gastos; un pequeño agujero hunde un gran barco.” – Benjamin Franklin",
-    "“No ahorres lo que te queda después de gastar, gasta lo que te queda después de ahorrar.” – Warren Buffett"
-]
-TIPS_FINANCIEROS = [
-    "**Regla 50/30/20:** 50% necesidades, 30% deseos, 20% ahorro.",
-    "**Regla de las 24 Horas:** Antes de una compra impulsiva, espera un día completo."
-]
-
-# --- Funciones de Datos (Preservadas) ---
+# --- Funciones de Datos ---
 def cargar_datos():
-    if os.path.exists(DB_FILE): return pd.read_csv(DB_FILE)
-    return pd.DataFrame(columns=["Fecha", "Tipo", "Categoría", "Monto", "Observaciones"])
+    if os.path.exists(DB_FILE):
+        return pd.read_csv(DB_FILE)
+    return pd.DataFrame(columns=["Fecha", "Tipo", "Categoría", "Monto"])
 
 def guardar_datos(df):
     df.to_csv(DB_FILE, index=False)
-    return df
 
 def cargar_categorias():
-    if os.path.exists(CAT_FILE): return pd.read_csv(CAT_FILE)["Nombre"].tolist()
+    if os.path.exists(CAT_FILE):
+        return pd.read_csv(CAT_FILE)["Nombre"].tolist()
     return ["Comida", "Transporte", "Hogar", "Salud", "Ocio", "Compras", "Facturas"]
 
 def guardar_lista_categorias(lista):
     pd.DataFrame({"Nombre": lista}).to_csv(CAT_FILE, index=False)
 
-# --- Generador de Diseño de Estado de Cuenta (Preservado) ---
-def generar_html_diseno(df):
-    df_sorted = df.sort_values(by="Fecha", ascending=False)
-    total_ing = df[df["Tipo"] == "Ingreso"]["Monto"].sum()
-    total_gas = df[df["Tipo"] == "Gasto"]["Monto"].sum()
-    saldo = total_ing - total_gas
-    
-    html = f"""
-    <div style="font-family: Calibri, sans-serif; border: 1px solid #004d40; max-width: 600px; margin: auto;">
-        <div style="background-color: #004d40; color: white; padding: 10px; text-align: center;">
-            <h2>ESTADO DE CUENTA PROFESIONAL</h2>
-        </div>
-        <div style="padding: 15px;">
-            <p><b>Balance Neto:</b> ${saldo:,.2f}</p>
-            <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
-                <thead>
-                    <tr style="background-color: #dce6f1;">
-                        <th style="border: 1px solid #ccc; padding: 4px;">FECHA</th>
-                        <th style="border: 1px solid #ccc; padding: 4px;">CATEGORÍA</th>
-                        <th style="border: 1px solid #ccc; padding: 4px;">MONTO</th>
-                    </tr>
-                </thead>
-                <tbody>
-    """
-    for _, row in df_sorted.head(20).iterrows():
-        bg = "#e2efda" if row['Tipo'] == "Ingreso" else "#ffffff"
-        html += f"<tr style='background-color: {bg};'><td style='border: 1px solid #ccc; padding: 2px; text-align: center;'>{row['Fecha']}</td><td style='border: 1px solid #ccc; padding: 2px;'>{row['Categoría']}</td><td style='border: 1px solid #ccc; padding: 2px; text-align: right;'>{row['Monto']:,.2f}</td></tr>"
-    html += "</tbody></table></div></div>"
-    return html
+# ================= INTERFAZ MÓVIL (UI) =================
+st.set_page_config(page_title="Control de Gastos e Ingresos", layout="centered")
 
-# ================= INTERFAZ STREAMLIT =================
-st.set_page_config(page_title="Control Financiero", layout="wide")
+# CSS para que se vea bien en celulares (fuentes y botones grandes)
+st.markdown("""
+    <style>
+    .stButton>button { width: 100%; border-radius: 12px; height: 55px; font-weight: bold; font-size: 16px; margin-bottom: 10px; }
+    [data-testid="stMetricValue"] { font-size: 22px !important; }
+    .main { background-color: #f5f7f9; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# Estado de sesión para limpiar el monto
+if 'monto_widget' not in st.session_state:
+    st.session_state.monto_widget = 0.0
+
 df = cargar_datos()
 lista_cats = cargar_categorias()
-if "f_key" not in st.session_state: st.session_state.f_key = 0
 
-st.title("📊 Control de Gastos e Ingresos")
+# --- RESUMEN Y GRÁFICO (VISTA CELULAR) ---
+st.title("₡ Control de Gastos e Ingresos")
 
-# --- REGISTRO ---
-with st.container(border=True):
-    c1, c2, c3 = st.columns([1, 1, 2])
-    with c1: tipo = st.selectbox("Tipo:", ["Gasto", "Ingreso"], key=f"t_{st.session_state.f_key}")
-    with c2: monto = st.number_input("Monto:", min_value=0.0, format="%.2f", key=f"m_{st.session_state.f_key}")
-    with c3: obs = st.text_input("Observaciones:", key=f"o_{st.session_state.f_key}")
-    
-    if tipo == "Gasto":
-        cols = st.columns(len(lista_cats))
-        for i, cat in enumerate(lista_cats):
-            if cols[i].button(cat, use_container_width=True):
-                nv = pd.DataFrame([{"Fecha": datetime.now().strftime("%Y-%m-%d %H:%M"), "Tipo": "Gasto", "Categoría": cat, "Monto": monto, "Observaciones": obs}])
-                df = pd.concat([df, nv], ignore_index=True); guardar_datos(df)
-                st.session_state.f_key += 1; st.rerun()
-    else:
-        if st.button("📥 REGISTRAR INGRESO", use_container_width=True):
-            nv = pd.DataFrame([{"Fecha": datetime.now().strftime("%Y-%m-%d %H:%M"), "Tipo": "Ingreso", "Categoría": "Ingreso General", "Monto": monto, "Observaciones": obs}])
-            df = pd.concat([df, nv], ignore_index=True); guardar_datos(df)
-            st.session_state.f_key += 1; st.rerun()
+ingresos_totales = df[df["Tipo"] == "Ingreso"]["Monto"].sum()
+gastos_totales = df[df["Tipo"] == "Gasto"]["Monto"].sum()
+balance = ingresos_totales - gastos_totales
+
+# Gráfico ajustado para pantalla angosta
+fig = go.Figure(data=[
+    go.Bar(name='Ingresos', x=['Resumen'], y=[ingresos_totales], marker_color='#2ecc71', text=f"₡{ingresos_totales:,.0f}"),
+    go.Bar(name='Gastos', x=['Resumen'], y=[gastos_totales], marker_color='#e74c3c', text=f"₡{gastos_totales:,.0f}")
+])
+fig.update_layout(barmode='group', height=250, margin=dict(t=5, b=5, l=0, r=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+st.plotly_chart(fig, use_container_width=True)
+
+# Métricas en columnas que se apilan en móvil
+c1, c2 = st.columns(2)
+c1.metric("INGRESOS", f"₡{ingresos_totales:,.0f}")
+c2.metric("GASTOS", f"₡{gastos_totales:,.0f}")
+st.subheader(f"Balance: ₡{balance:,.2f}")
 
 st.divider()
 
-# --- TABLA DE EDICIÓN ---
-st.subheader("⚙️ Historial y Edición")
-df_edit = st.data_editor(df, num_rows="dynamic", use_container_width=True, hide_index=True)
-if st.button("💾 Guardar Cambios"):
-    guardar_datos(df_edit); st.success("Guardado"); st.rerun()
+# --- REGISTRO TÁCTIL ---
+st.subheader("Registrar Movimiento")
+tipo = st.radio("Seleccione:", ["Gasto", "Ingreso"], horizontal=True)
 
-# --- SIDEBAR (DASHBOARD + BOTONES DE ENVÍO) ---
+# El monto ahora se limpia automáticamente
+monto_input = st.number_input("Monto en Colones:", min_value=0.0, step=500.0, format="%.2f", key="monto_widget")
+
+def registrar_y_limpiar(tipo_mov, cat_mov, monto_mov):
+    global df
+    if monto_mov > 0:
+        nuevo = pd.DataFrame([{
+            "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M"), 
+            "Tipo": tipo_mov, 
+            "Categoría": cat_mov, 
+            "Monto": monto_mov
+        }])
+        df = pd.concat([df, nuevo], ignore_index=True)
+        guardar_datos(df)
+        st.session_state.monto_widget = 0.0  # Limpia el campo
+        st.rerun()
+    else:
+        st.error("Por favor, ingrese un monto")
+
+if tipo == "Gasto":
+    # Cuadrícula de 2 columnas para que los botones sean grandes en el dedo
+    cols = st.columns(2)
+    for i, cat in enumerate(lista_cats):
+        with cols[i % 2]:
+            if st.button(f"{cat}"):
+                registrar_y_limpiar("Gasto", cat, monto_input)
+else:
+    if st.button("✅ GUARDAR INGRESO"):
+        registrar_y_limpiar("Ingreso", "Ingreso General", monto_input)
+
+# --- SIDEBAR: CONFIGURACIÓN Y REPORTE ---
 with st.sidebar:
-    st.header("📈 Dashboard")
-    if not df.empty:
-        total_ing = df[df['Tipo'] == 'Ingreso']['Monto'].sum()
-        total_gas = df[df['Tipo'] == 'Gasto']['Monto'].sum()
-        st.metric("BALANCE NETO", f"${total_ing - total_gas:,.2f}")
+    st.header("⚙️ Opciones")
+    
+    with st.expander("📂 Gestionar Categorías"):
+        nueva_cat = st.text_input("Nueva:")
+        if st.button("Añadir"):
+            if nueva_cat and nueva_cat not in lista_cats:
+                lista_cats.append(nueva_cat)
+                guardar_lista_categorias(lista_cats)
+                st.rerun()
         
-        df_chart = df.groupby(['Categoría', 'Tipo'])['Monto'].sum().unstack(fill_value=0).reset_index()
-        fig = go.Figure()
-        if 'Ingreso' in df_chart.columns: fig.add_trace(go.Bar(x=df_chart['Categoría'], y=df_chart['Ingreso'], name='Ing.', marker_color='#27ae60'))
-        if 'Gasto' in df_chart.columns: fig.add_trace(go.Bar(x=df_chart['Categoría'], y=df_chart['Gasto'], name='Gas.', marker_color='#e74c3c'))
-        fig.update_layout(barmode='group', height=230, margin=dict(t=0, b=0, l=0, r=0))
-        st.plotly_chart(fig, use_container_width=True)
+        st.write("---")
+        for c in lista_cats:
+            col_c, col_b = st.columns([3, 1])
+            col_c.write(c)
+            if col_b.button("🗑️", key=f"del_{c}"):
+                lista_cats.remove(c)
+                guardar_lista_categorias(lista_cats)
+                st.rerun()
 
     st.divider()
-    
-    # --- BOTÓN 1: ESTADO EN EL CUERPO ---
-    if st.button("📧 Enviar Estado en Cuerpo", use_container_width=True):
-        yag = yagmail.SMTP(USUARIO_MAIL, PASSWORD_MAIL)
-        yag.send(to=DESTINATARIO, subject="Estado de Cuenta (Vista Directa)", contents=generar_html_diseno(df))
-        st.success("Enviado al cuerpo")
 
-    # --- BOTÓN 2: TODO COMO ADJUNTO ---
-    if st.button("📎 Enviar Todo como Adjunto", use_container_width=True):
-        # Generar archivo temporal del reporte
-        with open("Estado_Cuenta.html", "w", encoding="utf-8") as f: f.write(generar_html_diseno(df))
-        
-        frase = random.choice(FRASES_DIA)
-        tip = random.choice(TIPS_FINANCIEROS)
-        cuerpo_bonito = f"<h3>¡Hola!</h3><p>{frase}</p><p><b>Tip:</b> {tip}</p><p>Te adjunto tu data y el reporte visual.</p>"
-        
-        yag = yagmail.SMTP(USUARIO_MAIL, PASSWORD_MAIL)
-        yag.send(to=DESTINATARIO, subject="Data + Reporte Adjuntos", contents=cuerpo_bonito, attachments=[DB_FILE, "Estado_Cuenta.html"])
-        st.success("Archivos adjuntados con éxito")
+    if st.button("📧 Enviar Reporte a Manuel"):
+        try:
+            yag = yagmail.SMTP(USUARIO_MAIL, PASSWORD_MAIL)
+            resumen_df = df.groupby(['Tipo', 'Categoría'])['Monto'].sum().reset_index()
+            resumen_df['Monto'] = resumen_df['Monto'].apply(lambda x: f"₡{x:,.2f}")
+            
+            tabla_html = resumen_df.to_html(index=False)
+            tabla_html = tabla_html.replace('table', 'table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px;"')
+            tabla_html = tabla_html.replace('<th>', '<th style="background-color: #2F75B5; color: white; padding: 8px; border: 1px solid #ddd;">')
+            tabla_html = tabla_html.replace('<td>', '<td style="padding: 8px; border: 1px solid #ddd; text-align: right;">')
 
-    with st.expander("Categorías"):
-        nc = st.text_input("Nueva:")
-        if st.button("Añadir"):
-            l = cargar_categorias(); l.append(nc); guardar_lista_categorias(l); st.rerun()
+            cuerpo_html = f"""
+            <div style="max-width: 400px; font-family: sans-serif; border: 1px solid #eee; padding: 20px; border-radius: 10px;">
+                <h2 style="color: #2F75B5;">Resumen de Gastos</h2>
+                <div style="background: #eef7ff; padding: 15px; border-radius: 5px; text-align: center;">
+                    <span style="font-size: 14px;">Balance Neto</span><br>
+                    <b style="font-size: 24px; color: {'#27ae60' if balance >= 0 else '#e74c3c'};">₡{balance:,.2f}</b>
+                </div>
+                <br>
+                {tabla_html}
+            </div>
+            """
+            yag.send(to=DESTINATARIO, subject="📊 Reporte de Gastos e Ingresos", contents=cuerpo_html, attachments=DB_FILE)
+            st.success("¡Reporte enviado!")
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+# --- HISTORIAL ---
+st.divider()
+st.subheader("🗑️ Últimos movimientos")
+if not df.empty:
+    for i in reversed(df.index[-5:]):
+        col_txt, col_del = st.columns([4, 1])
+        row = df.iloc[i]
+        simbolo = "🟢" if row['Tipo'] == "Ingreso" else "🔴"
+        col_txt.write(f"{simbolo} **{row['Categoría']}**: ₡{row['Monto']:,.2f}")
+        if col_del.button("❌", key=f"del_row_{i}"):
+            df = df.drop(i)
+            guardar_datos(df)
+            st.rerun()
